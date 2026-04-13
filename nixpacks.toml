@@ -3,7 +3,7 @@ nixPkgs = ["nodejs_22"]
 
 [phases.install]
 cmds = [
-  "cd frontend && npm install --force",
+  "cd frontend && rm -f package-lock.json && npm install",
   "cd backend && npm install"
 ]
 
