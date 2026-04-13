@@ -22,6 +22,8 @@ const KNOWN_TOKENS = {
     { address: '0x514910771AF9Ca656af840dff83E8264EcF986CA', symbol: 'LINK', decimals: 18 },
     { address: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', symbol: 'UNI', decimals: 18 },
   ],
+  195: [ // X Layer testnet — native OKB only, no known ERC20 contracts on testnet
+  ],
   196: [ // X Layer mainnet
     { address: '0xA8CE8aee21bC2A48a5EF670afCc9274C7bbbC035', symbol: 'USDC', decimals: 6 },
     { address: '0x1E4a5963aBFD975d8c9021ce480b42188849D41d', symbol: 'USDT', decimals: 6 },
@@ -50,6 +52,7 @@ const CHAIN_INFO = {
   11155111: { name: 'Sepolia', nativeSymbol: 'ETH', nativeName: 'Ethereum' },
   137:      { name: 'Polygon', nativeSymbol: 'MATIC', nativeName: 'Polygon' },
   56:       { name: 'BSC', nativeSymbol: 'BNB', nativeName: 'BNB' },
+  195:      { name: 'X Layer Testnet', nativeSymbol: 'OKB', nativeName: 'OKB' },
   196:      { name: 'X Layer', nativeSymbol: 'OKB', nativeName: 'OKB' },
   42161:    { name: 'Arbitrum', nativeSymbol: 'ETH', nativeName: 'Ethereum' },
   10:       { name: 'Optimism', nativeSymbol: 'ETH', nativeName: 'Ethereum' },
@@ -99,6 +102,15 @@ const WALLET_PROVIDERS = {
     },
     downloadUrl: 'https://metamask.io/download/',
   },
+}
+
+// X Layer Testnet network config for wallet_addEthereumChain
+const XLAYER_TESTNET = {
+  chainId: '0xC3', // 195
+  chainName: 'X Layer Testnet',
+  nativeCurrency: { name: 'OKB', symbol: 'OKB', decimals: 18 },
+  rpcUrls: ['https://testrpc.xlayer.tech'],
+  blockExplorerUrls: ['https://www.okx.com/web3/explorer/xlayer-test'],
 }
 
 export function WalletProvider({ children }) {
@@ -163,25 +175,30 @@ export function WalletProvider({ children }) {
 
     setLoading(true)
     try {
-      // Fetch prices + chain info in parallel
-      const [priceMap, bal, network, nonce] = await Promise.all([
+      // Fetch in parallel — use allSettled so one failure doesn't kill everything
+      const [priceRes, balRes, networkRes, nonceRes] = await Promise.allSettled([
         fetchPrices(),
         prov.getBalance(addr),
         prov.getNetwork(),
         prov.getTransactionCount(addr),
       ])
 
+      const priceMap = priceRes.status === 'fulfilled' ? priceRes.value : { OKB: 50, USDC: 1, USDT: 1 }
+      const bal = balRes.status === 'fulfilled' ? balRes.value : 0n
+      const network = networkRes.status === 'fulfilled' ? networkRes.value : null
+      const nonce = nonceRes.status === 'fulfilled' ? nonceRes.value : null
+
       setPrices(priceMap)
       setTxCount(nonce)
 
-      const chain = Number(network.chainId)
-      setChainId(chain)
+      const chain = network ? Number(network.chainId) : null
+      if (chain) setChainId(chain)
 
       const nativeBal = formatEther(bal)
       setBalance(nativeBal)
 
       // Native currency price
-      const chainInfo = CHAIN_INFO[chain] || { nativeSymbol: 'ETH' }
+      const chainInfo = CHAIN_INFO[chain] || { nativeSymbol: 'OKB' }
       const natPrice = priceMap[chainInfo.nativeSymbol] || 0
       setNativePrice(natPrice)
 
@@ -239,10 +256,26 @@ export function WalletProvider({ children }) {
         throw new Error(`${walletInfo.name} not detected. Please install it.`)
       }
 
-      const ethersProvider = new BrowserProvider(rawProvider)
       const accounts = await rawProvider.request({ method: 'eth_requestAccounts' })
       if (!accounts?.length) throw new Error('No accounts found')
 
+      // Switch to X Layer Testnet if not already on it
+      try {
+        await rawProvider.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: XLAYER_TESTNET.chainId }],
+        })
+      } catch (switchErr) {
+        // Chain not added yet — add it
+        if (switchErr.code === 4902) {
+          await rawProvider.request({
+            method: 'wallet_addEthereumChain',
+            params: [XLAYER_TESTNET],
+          })
+        }
+      }
+
+      const ethersProvider = new BrowserProvider(rawProvider)
       const ethersSigner = await ethersProvider.getSigner()
 
       setProvider(ethersProvider)
@@ -297,6 +330,25 @@ export function WalletProvider({ children }) {
     return tx
   }, [signer])
 
+  // Switch to X Layer Testnet
+  const switchToXLayerTestnet = useCallback(async () => {
+    const raw = providerName ? WALLET_PROVIDERS[providerName]?.getProvider() : null
+    if (!raw) return
+    try {
+      await raw.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: XLAYER_TESTNET.chainId }],
+      })
+    } catch (switchErr) {
+      if (switchErr.code === 4902) {
+        await raw.request({
+          method: 'wallet_addEthereumChain',
+          params: [XLAYER_TESTNET],
+        })
+      }
+    }
+  }, [providerName])
+
   // Derived values
   const shortAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : null
   const isConnected = !!address
@@ -333,6 +385,7 @@ export function WalletProvider({ children }) {
       refreshBalances: () => refreshBalances(address),
       sendNative,
       sendToken,
+      switchToXLayerTestnet,
       WALLET_PROVIDERS,
     }}>
       {children}

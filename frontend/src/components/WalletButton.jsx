@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useWallet } from '../context/WalletContext'
 
 export default function WalletButton({ onConnectClick }) {
-  const { isConnected, shortAddress, balance, providerName, disconnect } = useWallet()
+  const { isConnected, shortAddress, balance, chainInfo, providerName, disconnect } = useWallet()
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
   if (!isConnected) {
@@ -35,7 +35,7 @@ export default function WalletButton({ onConnectClick }) {
         <span className="w-2 h-2 rounded-full bg-success" />
         <span className="font-mono text-xs">{shortAddress}</span>
         <span className="text-xs" style={{ color: 'var(--text-m)' }}>
-          {parseFloat(balance || 0).toFixed(4)} ETH
+          {parseFloat(balance || 0).toFixed(4)} {chainInfo.nativeSymbol}
         </span>
         <motion.svg
           className="w-3.5 h-3.5"

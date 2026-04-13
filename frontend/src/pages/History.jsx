@@ -82,7 +82,7 @@ export default function History() {
                     </div>
                     {step.txHash && (
                       <a
-                        href={`https://www.okx.com/web3/explorer/xlayer/tx/${step.txHash}`}
+                        href={`https://www.okx.com/web3/explorer/xlayer-test/tx/${step.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs font-mono no-underline hover:underline"

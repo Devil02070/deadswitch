@@ -7,6 +7,7 @@ const statusRoutes = require('./routes/status')
 const portfolioRoutes = require('./routes/portfolio')
 const executeRoutes = require('./routes/execute')
 const historyRoutes = require('./routes/history')
+const walletRoutes = require('./routes/wallet')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -24,6 +25,7 @@ app.use('/api', statusRoutes)
 app.use('/api', portfolioRoutes)
 app.use('/api', executeRoutes)
 app.use('/api', historyRoutes)
+app.use('/api', walletRoutes)
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -35,9 +37,11 @@ const frontendDist = path.join(__dirname, '..', '..', 'frontend', 'dist')
 if (fs.existsSync(frontendDist)) {
   app.use(express.static(frontendDist))
   // SPA fallback — serve index.html for all non-API routes
-  app.get('*', (req, res) => {
-    if (!req.path.startsWith('/api')) {
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/api') && req.method === 'GET') {
       res.sendFile(path.join(frontendDist, 'index.html'))
+    } else {
+      next()
     }
   })
 }

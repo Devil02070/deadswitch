@@ -13,6 +13,7 @@ export default function Dashboard() {
     balance, nativePrice, nativeBalanceUSD,
     tokens, totalValueUSD,
     loading: walletLoading, txCount,
+    switchToXLayerTestnet,
   } = useWallet()
 
   const { data: config, loading: configLoading } = useApi('/config')
@@ -86,6 +87,26 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Wrong network warning */}
+      {address && chainId && chainId !== 195 && (
+        <motion.div
+          className="flex items-center justify-between p-4"
+          style={{ background: 'rgba(234,179,8,0.1)', border: '1px solid rgba(234,179,8,0.3)' }}
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        >
+          <p className="text-sm font-medium" style={{ color: '#eab308' }}>
+            Wrong network — you're on {chainInfo.name}. Switch to X Layer Testnet to see your assets.
+          </p>
+          <button
+            onClick={switchToXLayerTestnet}
+            className="px-3 py-1.5 text-xs font-bold uppercase cursor-pointer border-none"
+            style={{ background: '#eab308', color: '#000' }}
+          >
+            Switch Network
+          </button>
+        </motion.div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

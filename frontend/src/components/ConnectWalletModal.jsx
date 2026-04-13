@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useWallet } from '../context/WalletContext'
 
 const walletOptions = [
-  { id: 'okx', name: 'OKX WALLET', desc: 'Recommended for X Layer' },
+  { id: 'okx', name: 'OKX WALLET', desc: 'Recommended — use X Layer Testnet' },
   { id: 'metamask', name: 'METAMASK', desc: 'Popular browser wallet' },
 ]
 
