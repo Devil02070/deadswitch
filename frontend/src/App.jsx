@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, Outlet } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from './context/ThemeContext'
 import { WalletProvider, useWallet } from './context/WalletContext'
@@ -19,83 +19,48 @@ const queryClient = new QueryClient({
   },
 })
 
-function AppContent() {
-  const [view, setView] = useState('landing')
-  const [page, setPage] = useState('dashboard')
-  const { isConnected, connectWallet, disconnect } = useWallet()
+function LandingRoute() {
+  const navigate = useNavigate()
+  const { isConnected, connectWallet } = useWallet()
 
-  // When wallet connects, auto-enter the app
-  useEffect(() => {
-    if (isConnected) setView('app')
-  }, [isConnected])
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
+      <Landing
+        onLaunchApp={() => isConnected ? navigate('/dashboard') : connectWallet()}
+        onConnectWallet={connectWallet}
+      />
+    </motion.div>
+  )
+}
 
-  const launchApp = () => {
-    if (isConnected) {
-      setView('app')
-    } else {
-      connectWallet()
-    }
-  }
+function AppLayout() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { connectWallet, disconnect } = useWallet()
 
-  const goHome = () => setView('landing')
+  // Active sidebar item derived from URL — e.g. /dashboard → 'dashboard'
+  const activePage = location.pathname.replace(/^\//, '').split('/')[0] || 'dashboard'
 
   const handleDisconnect = async () => {
     await disconnect()
-    setView('landing')
+    navigate('/', { replace: true })
   }
 
   return (
-    <AnimatePresence mode="wait">
-      {view === 'landing' ? (
-        <motion.div
-          key="landing"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          <Landing
-            onLaunchApp={launchApp}
-            onConnectWallet={connectWallet}
-          />
-        </motion.div>
-      ) : (
-        <motion.div
-          key="app"
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.98 }}
-          transition={{ duration: 0.4 }}
-          className="flex h-screen overflow-hidden"
-          style={{ background: 'var(--surface)' }}
-        >
-          <Sidebar
-            activePage={page}
-            onNavigate={setPage}
-            onGoHome={goHome}
-            onConnectWallet={connectWallet}
-            onDisconnect={handleDisconnect}
-          />
-          <main className="flex-1 overflow-y-auto" style={{ background: 'var(--surface)' }}>
-            <div className="max-w-6xl mx-auto p-6">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={page}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -12 }}
-                  transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
-                >
-                  {page === 'dashboard' && <Dashboard />}
-                  {page === 'configure' && <Configure />}
-                  {page === 'history' && <History />}
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </main>
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--surface)' }}>
+      <Sidebar
+        activePage={activePage}
+        onNavigate={(page) => navigate(`/${page}`)}
+        onGoHome={() => navigate('/')}
+        onConnectWallet={connectWallet}
+        onDisconnect={handleDisconnect}
+      />
+      <main className="flex-1 overflow-y-auto" style={{ background: 'var(--surface)' }}>
+        <div className="max-w-6xl mx-auto p-6">
+          <Outlet />
+        </div>
+      </main>
+    </div>
   )
 }
 
@@ -103,9 +68,19 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
-        <WalletProvider>
-          <AppContent />
-        </WalletProvider>
+        <BrowserRouter>
+          <WalletProvider>
+            <Routes>
+              <Route path="/" element={<LandingRoute />} />
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/configure" element={<Configure />} />
+                <Route path="/history" element={<History />} />
+              </Route>
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </WalletProvider>
+        </BrowserRouter>
       </ThemeProvider>
     </QueryClientProvider>
   )

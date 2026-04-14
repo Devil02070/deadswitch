@@ -97,6 +97,14 @@ function extractError(err) {
   )
 }
 
+// Generate a realistic-looking fake TX hash for demo mode.
+function fakeTxHash() {
+  const hex = '0123456789abcdef'
+  let out = '0x'
+  for (let i = 0; i < 64; i++) out += hex[Math.floor(Math.random() * 16)]
+  return out
+}
+
 export default function PanicButton({ onTriggered }) {
   const {
     isConnected, signer, provider, walletProvider, address, chainId,
@@ -105,6 +113,7 @@ export default function PanicButton({ onTriggered }) {
   } = useWallet()
   const { data: config } = useApi('/config')
 
+  const [mode, setMode] = useState('live') // 'live' | 'demo'
   const [confirming, setConfirming] = useState(false)
   const [executing, setExecuting] = useState(false)
   const [step, setStep] = useState(null)
@@ -119,8 +128,94 @@ export default function PanicButton({ onTriggered }) {
     }, ms)
   }
 
+  const handleDemoPanic = async () => {
+    setExecuting(true)
+    setResults([])
+    const allResults = []
+
+    const beneficiaries = (config?.beneficiaries || []).filter(b => b.address && parseFloat(b.allocationPercent) > 0)
+    if (beneficiaries.length === 0) {
+      setStep({ current: 0, total: 4, label: 'Error: no beneficiaries configured (demo mode still needs at least one)', error: true })
+      return finish(4000)
+    }
+
+    try {
+      // Step 1
+      setStep({ current: 1, total: 4, label: 'Scanning wallet (demo)...' })
+      await new Promise(r => setTimeout(r, 900))
+
+      // Step 2
+      setStep({ current: 2, total: 4, label: 'Computing transfer amounts (demo)...' })
+      await new Promise(r => setTimeout(r, 700))
+
+      // Step 3: ERC20 (simulated if any tokens in wallet)
+      if (tokens.length > 0) {
+        setStep({ current: 3, total: 4, label: 'Transferring tokens (demo)...' })
+        for (const token of tokens) {
+          for (const b of beneficiaries) {
+            const share = parseFloat(token.balance) * (b.allocationPercent / 100)
+            if (share <= 0) continue
+            const txHash = fakeTxHash()
+            allResults.push({
+              beneficiary: b.name, address: b.address,
+              token: token.symbol, amount: share.toFixed(6),
+              txHash, status: 'pending', demo: true,
+            })
+            setResults([...allResults])
+            await new Promise(r => setTimeout(r, 900))
+            allResults[allResults.length - 1].status = 'completed'
+            setResults([...allResults])
+          }
+        }
+      }
+
+      // Step 4: Native OKB simulated
+      setStep({ current: 4, total: 4, label: `Transferring ${chainInfo?.nativeSymbol || 'OKB'} (demo)...` })
+      const demoBase = parseFloat(balance || 0) > 0 ? parseFloat(balance) * 0.5 : 0.1
+      const totalAlloc = beneficiaries.reduce((s, b) => s + parseFloat(b.allocationPercent), 0)
+      for (const b of beneficiaries) {
+        const share = demoBase * (parseFloat(b.allocationPercent) / totalAlloc)
+        const txHash = fakeTxHash()
+        allResults.push({
+          beneficiary: b.name, address: b.address,
+          token: chainInfo?.nativeSymbol || 'OKB', amount: share.toFixed(6),
+          txHash, status: 'pending', demo: true,
+        })
+        setResults([...allResults])
+        await new Promise(r => setTimeout(r, 1100))
+        allResults[allResults.length - 1].status = 'completed'
+        setResults([...allResults])
+      }
+
+      // Record to backend history as demo
+      try {
+        await apiPost('/execute/record', {
+          trigger: 'Panic Button (Demo)',
+          totalUSD: totalValueUSD || 0,
+          results: allResults,
+          chain: 'X Layer Testnet (Demo)',
+        })
+      } catch {}
+
+      setStep({
+        current: 4, total: 4,
+        label: `Demo complete — simulated ${allResults.length} transfers`,
+      })
+      if (onTriggered) onTriggered()
+    } catch (err) {
+      setStep({ current: 0, total: 4, label: `Demo error: ${err.message}`, error: true })
+    } finally {
+      finish(6000)
+    }
+  }
+
   const handlePanic = async () => {
     if (!confirming) { setConfirming(true); return }
+
+    // Demo mode — skip all wallet checks, run simulated flow
+    if (mode === 'demo') {
+      return handleDemoPanic()
+    }
 
     if (!isConnected || !signer) {
       setExecuting(true)
@@ -290,13 +385,15 @@ export default function PanicButton({ onTriggered }) {
   }
 
   if (executing) {
-    const barColor = step?.error ? '#eab308' : '#FF2D20'
+    const barColor = step?.error ? '#eab308' : (mode === 'live' ? '#FF2D20' : '#6366f1')
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6" style={{ border: `1px solid ${barColor}`, background: 'var(--card-bg)' }}>
         <div className="flex items-center gap-3 mb-4">
           <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ repeat: Infinity, duration: 0.8 }} className="w-3 h-3" style={{ background: barColor }} />
           <h3 className="text-sm font-black uppercase tracking-wider" style={{ color: barColor }}>
-            {step?.error ? 'Protocol Halted' : 'Emergency Protocol Active'}
+            {step?.error
+              ? 'Protocol Halted'
+              : mode === 'demo' ? '▶ Demo Simulation Active' : 'Emergency Protocol Active'}
           </h3>
         </div>
         {step && (
@@ -347,52 +444,97 @@ export default function PanicButton({ onTriggered }) {
   }
 
   const isTestnet = chainId === 195
-  const disabled = !isConnected || !isTestnet || !config?.beneficiaries?.length
+  const needsWallet = !isConnected || !isTestnet
+  // Demo mode only needs beneficiaries — no wallet/chain required
+  const disabled = mode === 'live'
+    ? (needsWallet || !config?.beneficiaries?.length)
+    : !config?.beneficiaries?.length
 
   return (
     <div className="p-6" style={{ border: '1px solid var(--border)', background: 'var(--card-bg)' }}>
-      <div className="mb-4">
-        <h3 className="text-sm font-black uppercase tracking-wider" style={{ color: 'var(--text-h)' }}>Emergency Liquidation</h3>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-m)' }}>
-          Instantly transfer all assets from your connected wallet to configured beneficiaries.
-        </p>
-        {disabled && (
-          <p className="text-[11px] mt-2 font-mono" style={{ color: '#eab308' }}>
-            {!isConnected
-              ? '→ Connect wallet to enable'
-              : !isTestnet
-              ? '→ Switch to X Layer Testnet'
-              : '→ Add at least one beneficiary in Configure'}
+      <div className="flex items-start justify-between mb-4 gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-black uppercase tracking-wider" style={{ color: 'var(--text-h)' }}>Emergency Liquidation</h3>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-m)' }}>
+            {mode === 'live'
+              ? 'Instantly transfer all assets from your connected wallet to configured beneficiaries.'
+              : 'Simulate the panic flow end-to-end without touching your wallet — for presentations.'}
           </p>
-        )}
+        </div>
+        {/* Live / Demo tab toggle */}
+        <div className="flex p-0.5" style={{ border: '1px solid var(--border)', background: 'var(--surface-2)' }}>
+          {['live', 'demo'].map(m => (
+            <button
+              key={m}
+              onClick={() => { setMode(m); setConfirming(false) }}
+              disabled={executing}
+              className="px-3 py-1.5 text-[10px] font-mono font-bold uppercase tracking-[0.12em] cursor-pointer border-none transition-colors"
+              style={{
+                background: mode === m ? (m === 'live' ? '#FF2D20' : '#6366f1') : 'transparent',
+                color: mode === m ? '#fff' : 'var(--text-m)',
+                opacity: executing ? 0.5 : 1,
+              }}
+            >
+              {m === 'live' ? '● LIVE' : '▶ DEMO'}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {disabled && (
+        <p className="text-[11px] mb-3 font-mono" style={{ color: '#eab308' }}>
+          {mode === 'live' && !isConnected
+            ? '→ Connect wallet to enable live mode (or switch to Demo)'
+            : mode === 'live' && !isTestnet
+            ? '→ Switch to X Layer Testnet (or switch to Demo)'
+            : '→ Add at least one beneficiary in Configure'}
+        </p>
+      )}
 
       <AnimatePresence>
         {confirming && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="mb-4 overflow-hidden">
-            <div className="p-4" style={{ border: '1px solid #FF2D20', background: 'rgba(255,45,32,0.05)' }}>
+            <div
+              className="p-4"
+              style={{
+                border: mode === 'live' ? '1px solid #FF2D20' : '1px solid #6366f1',
+                background: mode === 'live' ? 'rgba(255,45,32,0.05)' : 'rgba(99,102,241,0.05)',
+              }}
+            >
               <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
-                <p className="text-xs font-bold" style={{ color: '#FF2D20' }}>
-                  WARNING: This will send a real transaction from your wallet.
+                <p className="text-xs font-bold" style={{ color: mode === 'live' ? '#FF2D20' : '#6366f1' }}>
+                  {mode === 'live'
+                    ? 'WARNING: This will send a real transaction from your wallet.'
+                    : 'DEMO MODE: This will simulate the panic flow with fake TX hashes.'}
                 </p>
                 <span
                   className="text-[9px] font-mono font-bold uppercase px-2 py-0.5"
                   style={{
-                    border: isTestnet ? '1px solid #eab308' : '1px solid #FF2D20',
-                    color: isTestnet ? '#eab308' : '#FF2D20',
-                    background: isTestnet ? 'rgba(234,179,8,0.1)' : 'rgba(255,45,32,0.1)',
+                    border: mode === 'demo'
+                      ? '1px solid #6366f1'
+                      : isTestnet ? '1px solid #eab308' : '1px solid #FF2D20',
+                    color: mode === 'demo'
+                      ? '#6366f1'
+                      : isTestnet ? '#eab308' : '#FF2D20',
+                    background: mode === 'demo'
+                      ? 'rgba(99,102,241,0.1)'
+                      : isTestnet ? 'rgba(234,179,8,0.1)' : 'rgba(255,45,32,0.1)',
                   }}
                 >
-                  {isTestnet ? '✓ X LAYER TESTNET' : `⚠ CHAIN ${chainId || '?'}`}
+                  {mode === 'demo'
+                    ? '▶ SIMULATION'
+                    : isTestnet ? '✓ X LAYER TESTNET' : `⚠ CHAIN ${chainId || '?'}`}
                 </span>
               </div>
               <p className="text-[11px] font-mono" style={{ color: 'var(--text-p)' }}>
                 Balance: {parseFloat(balance || 0).toFixed(4)} {chainInfo?.nativeSymbol || 'OKB'} • Beneficiaries: {config?.beneficiaries?.length || 0}
               </p>
-              <p className="text-[11px] font-mono mt-1" style={{ color: '#22C55E' }}>
-                → Will transfer {(parseFloat(balance || 0) * 0.5).toFixed(4)} {chainInfo?.nativeSymbol || 'OKB'} (50%). Remaining {(parseFloat(balance || 0) * 0.5).toFixed(4)} stays for gas.
+              <p className="text-[11px] font-mono mt-1" style={{ color: mode === 'demo' ? '#6366f1' : '#22C55E' }}>
+                {mode === 'live'
+                  ? <>→ Will transfer {(parseFloat(balance || 0) * 0.5).toFixed(4)} {chainInfo?.nativeSymbol || 'OKB'} (50%). Remaining stays for gas.</>
+                  : <>→ Will simulate {config?.beneficiaries?.length || 0} transfer(s) with fake TX hashes — no funds move, no wallet prompts.</>}
               </p>
-              {config?.beneficiaries?.some(b => address && b.address?.toLowerCase() === address.toLowerCase()) && (
+              {mode === 'live' && config?.beneficiaries?.some(b => address && b.address?.toLowerCase() === address.toLowerCase()) && (
                 <p className="text-[11px] font-mono mt-2 p-2" style={{ color: '#eab308', background: 'rgba(234,179,8,0.1)', border: '1px dashed #eab308' }}>
                   ⚠ Beneficiary is your own wallet address — wallets reject self-sends. Add a different address in Configure.
                 </p>
@@ -407,11 +549,16 @@ export default function PanicButton({ onTriggered }) {
           onClick={handlePanic}
           disabled={disabled && !confirming}
           className="flex-1 py-3 px-6 font-black uppercase tracking-wider text-sm text-white cursor-pointer border-none"
-          style={{ background: disabled && !confirming ? '#555' : '#FF2D20', opacity: disabled && !confirming ? 0.5 : 1 }}
+          style={{
+            background: disabled && !confirming ? '#555' : (mode === 'live' ? '#FF2D20' : '#6366f1'),
+            opacity: disabled && !confirming ? 0.5 : 1,
+          }}
           whileHover={disabled && !confirming ? {} : { x: -2, y: -2, boxShadow: '4px 4px 0px #000' }}
           whileTap={{ x: 0, y: 0 }}
         >
-          {confirming ? 'CONFIRM LIQUIDATION' : 'PANIC BUTTON'}
+          {confirming
+            ? (mode === 'live' ? 'CONFIRM LIQUIDATION' : 'RUN DEMO SIMULATION')
+            : (mode === 'live' ? 'PANIC BUTTON' : 'DEMO: PANIC BUTTON')}
         </motion.button>
         <AnimatePresence>
           {confirming && (
