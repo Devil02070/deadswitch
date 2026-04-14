@@ -47,7 +47,7 @@ export default function Navbar({ onLaunchApp, onConnectWallet }) {
           >
             <Logo size={42} />
             <span className="text-sm font-black uppercase tracking-wide" style={{ color: 'var(--text-h)' }}>
-              Dead<span style={{ color: '#FF2D20' }}>Switch</span>
+              Heir<span style={{ color: '#FF2D20' }}>loom</span>
             </span>
           </motion.a>
 

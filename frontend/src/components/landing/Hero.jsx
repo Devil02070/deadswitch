@@ -73,16 +73,22 @@ export default function Hero({ onLaunchApp, onConnectWallet }) {
           </span>
         </motion.div> */}
 
-        {/* Massive heading */}
+        {/* Massive heading — brand split across two lines */}
         <div ref={headingRef}>
           <h1 className="text-5xl sm:text-6xl md:text-7xl lg:text-[8rem] xl:text-[10rem] font-black uppercase leading-[0.85] tracking-[-0.04em] mb-0 overflow-hidden">
             <span className="block" style={{ color: 'var(--text-h)' }}>
-              {splitText("DEAD")}
+              {splitText("HEIR")}
             </span>
             <span className="block" style={{ color: '#FF2D20' }}>
-              {splitText("SWITCH")}
+              {splitText("LOOM")}
             </span>
           </h1>
+          <p
+            className="mt-4 text-sm sm:text-base md:text-lg font-mono uppercase tracking-[0.3em]"
+            style={{ color: 'var(--text-m)' }}
+          >
+            The on-chain will your wallet never had
+          </p>
         </div>
 
         {/* Bottom section — two columns */}
